@@ -1,0 +1,5 @@
+- name: period_predictor_panel
+  sidebar_title: "Period Predictor"
+  sidebar_icon: mdi:calendar
+  frontend_url_path: period-predictor
+  module_url: /local/period-predictor/main.js
