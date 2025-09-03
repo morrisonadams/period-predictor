@@ -1,0 +1,14 @@
+{
+  "name": "period-predictor-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "echo \"No tests\""
+  },
+  "dependencies": {
+    "vue": "^3.3.4",
+    "@fullcalendar/core": "^6.1.7",
+    "@fullcalendar/daygrid": "^6.1.7",
+    "@fullcalendar/vue3": "^6.1.7"
+  }
+}
