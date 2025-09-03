@@ -8,7 +8,8 @@ WORKDIR /app
 COPY backend /app/backend
 COPY web /app/web
 RUN npm --prefix backend install \
-    && npm --prefix web install
+    && npm --prefix web install \
+    && npm --prefix web run build
 
 COPY rootfs /
 
