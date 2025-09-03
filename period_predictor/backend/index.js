@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3002;
 const DB_PATH = path.join('/data', 'periods.db');
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../web')));
+app.use(express.static(path.join(__dirname, '../web/dist')));
 
 // Initialize database and ensure table exists
 const db = new sqlite3.Database(DB_PATH);
