@@ -1,10 +1,24 @@
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-const DB_PATH = path.join('/data', 'periods.db');
+
+// Determine a writable location for the database.  In the Home Assistant
+// environment the "/data" directory is used for persistence, but in other
+// environments (such as local development or tests) that directory may not
+// exist.  Fall back to a local "data" folder inside the project if needed.
+const DATA_DIR = '/data';
+let dbPathDir = DATA_DIR;
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+} catch (e) {
+  dbPathDir = path.join(__dirname, '..', 'data');
+  fs.mkdirSync(dbPathDir, { recursive: true });
+}
+const DB_PATH = path.join(dbPathDir, 'periods.db');
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../web/dist')));
