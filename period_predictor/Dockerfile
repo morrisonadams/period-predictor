@@ -8,6 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server.py ./
 COPY web /web
+COPY rootfs /
 
 EXPOSE 80
-CMD ["python3", "/app/server.py"]

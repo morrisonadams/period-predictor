@@ -1,5 +1,5 @@
 name: Period Predictor
-version: "0.1.0"
+version: "0.1.1"
 slug: period_predictor
 description: Record period start dates and predict the next period using a simple statistical model.
 arch:
@@ -14,5 +14,6 @@ panel_title: Period Predictor
 panel_icon: mdi:calendar
 startup: application
 boot: auto
+init: false
 map:
   - data:rw
