@@ -1,7 +1,7 @@
 <template>
   <aside class="sidebar" tabindex="0">
     <FullCalendar
-      defaultView="dayGridMonth"
+      initialView="dayGridMonth"
       :plugins="calendarPlugins"
       :events="events"
       aria-label="Period calendar"
@@ -34,11 +34,23 @@ const events = ref([])
 const calendarPlugins = [dayGridPlugin]
 
 async function startPeriod() {
-  await fetch('/api/period/start', { method: 'POST' })
+  const today = new Date().toISOString().split('T')[0]
+  try {
+    const res = await fetch('/api/periods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: today }),
+    })
+    if (!res.ok) throw new Error('Request failed')
+    events.value = [...events.value, { title: 'Period', start: today }]
+    alert('Period logged!')
+  } catch (err) {
+    alert('Failed to log period')
+  }
 }
 
 async function endPeriod() {
-  await fetch('/api/period/end', { method: 'POST' })
+  // Endpoint not yet implemented
 }
 
 function handleKey(e) {
@@ -50,8 +62,11 @@ function handleKey(e) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('keydown', handleKey)
+  const res = await fetch('/api/periods')
+  const dates = await res.json()
+  events.value = dates.map((d) => ({ title: 'Period', start: d }))
 })
 
 onBeforeUnmount(() => {
