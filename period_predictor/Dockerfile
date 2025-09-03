@@ -1,13 +1,15 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-python:3.11-alpine3.18
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
 FROM ${BUILD_FROM}
 
+# Install Node.js
+RUN apk add --no-cache nodejs npm
+
 WORKDIR /app
+COPY backend /app/backend
+COPY web /app/web
+RUN npm --prefix backend install \
+    && npm --prefix web install
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY server.py ./
-COPY web /web
 COPY rootfs /
 
-EXPOSE 80
+EXPOSE 3002
