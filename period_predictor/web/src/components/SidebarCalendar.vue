@@ -35,12 +35,18 @@ const calendarPlugins = [dayGridPlugin]
 
 async function startPeriod() {
   const today = new Date().toISOString().split('T')[0]
-  await fetch('/api/periods', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date: today }),
-  })
-  events.value = [...events.value, { title: 'Period', start: today }]
+  try {
+    const res = await fetch('/api/periods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: today }),
+    })
+    if (!res.ok) throw new Error('Request failed')
+    events.value = [...events.value, { title: 'Period', start: today }]
+    alert('Period logged!')
+  } catch (err) {
+    alert('Failed to log period')
+  }
 }
 
 async function endPeriod() {
