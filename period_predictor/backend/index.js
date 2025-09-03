@@ -6,6 +6,16 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const PORT = process.env.PORT || 3002;
 
+const logError = (...args) => console.log('[ERROR]', ...args);
+
+process.on('uncaughtException', (err) => {
+  logError('Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  logError('Unhandled promise rejection:', err);
+});
+
 // Determine a writable location for the database.  In the Home Assistant
 // environment the "/data" directory is used for persistence, but in other
 // environments (such as local development or tests) that directory may not
@@ -24,24 +34,41 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../web/dist')));
 
 // Initialize database and ensure table exists
-const db = new sqlite3.Database(DB_PATH);
+const db = new sqlite3.Database(DB_PATH, (err) => {
+  if (err) {
+    logError('Failed to open database:', err);
+  }
+});
 db.serialize(() => {
-  db.run('CREATE TABLE IF NOT EXISTS periods (start_date TEXT)');
+  db.run('CREATE TABLE IF NOT EXISTS periods (start_date TEXT)', (err) => {
+    if (err) {
+      logError('Failed to create periods table:', err);
+    }
+  });
 });
 
 // List all period start dates or add a new one
 app.route('/api/periods')
   .get((req, res) => {
     db.all('SELECT start_date FROM periods ORDER BY start_date', (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        logError('Failed to fetch periods:', err);
+        return res.status(500).json({ error: err.message });
+      }
       res.json(rows.map(r => r.start_date));
     });
   })
   .post((req, res) => {
     const date = req.body?.date;
-    if (!date) return res.status(400).json({ error: 'date is required' });
+    if (!date) {
+      logError('POST /api/periods missing required "date" field');
+      return res.status(400).json({ error: 'date is required' });
+    }
     db.run('INSERT INTO periods (start_date) VALUES (?)', [date], function (err) {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        logError('Failed to insert period:', err);
+        return res.status(500).json({ error: err.message });
+      }
       res.status(201).json({});
     });
   });
@@ -49,7 +76,10 @@ app.route('/api/periods')
 // Predict the next period start date
 app.get('/api/prediction', (req, res) => {
   db.all('SELECT start_date FROM periods ORDER BY start_date', (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) {
+      logError('Failed to generate prediction:', err);
+      return res.status(500).json({ error: err.message });
+    }
     if (rows.length < 2) return res.json({ next: null });
     const dates = rows.map(r => new Date(r.start_date));
     const intervals = [];
