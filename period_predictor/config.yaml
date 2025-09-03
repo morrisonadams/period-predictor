@@ -9,7 +9,7 @@ arch:
   - aarch64
   - i386
 ingress: true
-ingress_port: 80
+ingress_port: 3002
 panel_title: Period Predictor
 panel_icon: mdi:calendar
 startup: application
