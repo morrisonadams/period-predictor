@@ -36,7 +36,7 @@ const calendarPlugins = [dayGridPlugin]
 async function startPeriod() {
   const today = new Date().toISOString().split('T')[0]
   try {
-    const res = await fetch('/api/periods', {
+    const res = await fetch('api/periods', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: today }),
@@ -64,7 +64,7 @@ function handleKey(e) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKey)
-  const res = await fetch('/api/periods')
+  const res = await fetch('api/periods')
   const dates = await res.json()
   events.value = dates.map((d) => ({ title: 'Period', start: d }))
 })
