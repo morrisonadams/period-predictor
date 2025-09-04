@@ -5,6 +5,7 @@
         initialView="dayGridMonth"
         :plugins="calendarPlugins"
         :events="events"
+        :headerToolbar="toolbarOptions"
       />
     </div>
     <div class="controls">
@@ -33,6 +34,11 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 
 const events = ref([])
 const calendarPlugins = [dayGridPlugin]
+const toolbarOptions = {
+  left: 'prev,next',
+  center: 'title',
+  right: ''
+}
 
 async function startPeriod() {
   const today = new Date().toISOString().split('T')[0]
