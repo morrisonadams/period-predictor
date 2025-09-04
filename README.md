@@ -4,6 +4,10 @@ This repository contains a Home Assistant add-on that lets you record period sta
 
 The backend now runs on [Express](https://expressjs.com/) with a small Vue-based frontend, listening on port **3002** by default.
 
+## Logging
+
+Logs from the add-on appear in Home Assistant's add-on log panel. Set the verbosity by adjusting the `log_level` option in the add-on configuration (`debug`, `info`, `warning`, or `error`).
+
 ## Add this repository to Home Assistant
 
 1. Go to **Settings → Add-ons → Add-on Store**.
