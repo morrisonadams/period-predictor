@@ -3,6 +3,7 @@ const fs = require('fs');
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const logger = require('./logger');
+const { OpenAI } = require('openai');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -178,35 +179,66 @@ app.delete('/api/periods', (_req, res) => {
   });
 });
 
-// Predict the next period start date
+// Predict the next period start date using GPT with a fallback heuristic
 app.get('/api/prediction', (_req, res) => {
-  db.all('SELECT start_date FROM periods ORDER BY start_date', (err, rows) => {
+  db.all('SELECT start_date FROM periods ORDER BY start_date', async (err, rows) => {
     if (err) {
       logger.error('Failed to generate prediction:', err);
       return res.status(500).json({ error: err.message });
     }
 
-    let cycleLength = 28; // default cycle length
     let nextDate;
+    let message = '';
 
-    if (rows.length >= 2) {
-      const dates = rows.map(r => new Date(r.start_date));
-      const intervals = [];
-      for (let i = 1; i < dates.length; i++) {
-        const diffMs = dates[i] - dates[i - 1];
-        intervals.push(diffMs / (1000 * 60 * 60 * 24));
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    try {
+      const dates = rows.map((r) => r.start_date).join(', ');
+      const prompt =
+        rows.length > 0
+          ? `Given the recorded menstrual cycle start dates: ${dates}. Predict the next start date and provide a short encouraging message. Respond with JSON {"next_start":"YYYY-MM-DD","message":"text"}.`
+          : `No prior period data is available. Assume a 28 day cycle starting today ${new Date()
+              .toISOString()
+              .split('T')[0]}. Respond with JSON {"next_start":"YYYY-MM-DD","message":"text"}.`;
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const content = response.choices[0].message.content;
+      const parsed = JSON.parse(content);
+      nextDate = new Date(parsed.next_start);
+      message = parsed.message;
+      logger.info(`Predicted next period start ${parsed.next_start} using GPT`);
+    } catch (gptErr) {
+      logger.error('GPT prediction failed, falling back:', gptErr);
+      let cycleLength = 28; // default cycle length
+      if (rows.length >= 2) {
+        const dates = rows.map((r) => new Date(r.start_date));
+        const intervals = [];
+        for (let i = 1; i < dates.length; i++) {
+          const diffMs = dates[i] - dates[i - 1];
+          intervals.push(diffMs / (1000 * 60 * 60 * 24));
+        }
+        cycleLength = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        nextDate = new Date(
+          dates[dates.length - 1].getTime() + cycleLength * 24 * 60 * 60 * 1000
+        );
+        logger.info(
+          `Predicted next period start ${nextDate.toISOString().split('T')[0]} based on history`
+        );
+      } else if (rows.length === 1) {
+        const lastStart = new Date(rows[0].start_date);
+        nextDate = new Date(
+          lastStart.getTime() + cycleLength * 24 * 60 * 60 * 1000
+        );
+        logger.info('Only one period record; using default 28 day cycle');
+      } else {
+        nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + cycleLength);
+        logger.info('No period data; using today + 28 days for prediction');
       }
-      cycleLength = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      nextDate = new Date(dates[dates.length - 1].getTime() + cycleLength * 24 * 60 * 60 * 1000);
-      logger.info(`Predicted next period start ${nextDate.toISOString().split('T')[0]} based on history`);
-    } else if (rows.length === 1) {
-      const lastStart = new Date(rows[0].start_date);
-      nextDate = new Date(lastStart.getTime() + cycleLength * 24 * 60 * 60 * 1000);
-      logger.info('Only one period record; using default 28 day cycle');
-    } else {
-      nextDate = new Date();
-      nextDate.setDate(nextDate.getDate() + cycleLength);
-      logger.info('No period data; using today + 28 days for prediction');
+      message = `Based on historical average, next period around ${nextDate
+        .toISOString()
+        .split('T')[0]}.`;
     }
 
     const pmsStart = new Date(nextDate.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -217,6 +249,7 @@ app.get('/api/prediction', (_req, res) => {
       period_length: 5,
       pms_start: pmsStart.toISOString().split('T')[0],
       pms_end: pmsEnd.toISOString().split('T')[0],
+      text: message,
     });
   });
 });
