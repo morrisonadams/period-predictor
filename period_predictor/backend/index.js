@@ -56,6 +56,22 @@ db.serialize(() => {
       }
     }
   );
+  db.all('PRAGMA table_info(periods)', (err, columns) => {
+    if (err) {
+      logger.error('Failed to fetch periods table info:', err);
+      return;
+    }
+    const hasEndDate = columns.some((c) => c.name === 'end_date');
+    if (!hasEndDate) {
+      db.run('ALTER TABLE periods ADD COLUMN end_date TEXT', (alterErr) => {
+        if (alterErr) {
+          logger.error('Failed to add end_date column:', alterErr);
+        } else {
+          logger.info('Added end_date column to periods table');
+        }
+      });
+    }
+  });
 });
 
 // Fetch all period records
