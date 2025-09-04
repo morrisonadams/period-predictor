@@ -19,5 +19,7 @@ map:
   - data:rw
 options:
   log_level: info
+  openai_api_key: ""
 schema:
   log_level: list(debug|info|warning|error)
+  openai_api_key: str?

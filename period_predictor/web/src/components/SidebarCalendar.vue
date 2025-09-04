@@ -41,6 +41,9 @@
       <button @click="testDb" aria-label="Test database" tabindex="2">
         Test database
       </button>
+      <button @click="predictNext" aria-label="Predict next period" tabindex="3">
+        Predict next period
+      </button>
     </div>
     <ul
       v-if="menu.visible"
@@ -238,6 +241,22 @@ async function testDb() {
   } catch (err) {
     console.error('Failed to test DB', err)
     alert('Failed to test DB')
+  }
+}
+
+async function predictNext() {
+  try {
+    const res = await fetch('api/prediction')
+    if (!res.ok) throw new Error('Request failed')
+    const data = await res.json()
+    if (data.next) {
+      alert(`Next period expected on ${data.next}`)
+    } else {
+      alert('Not enough data for prediction')
+    }
+  } catch (err) {
+    console.error('Failed to fetch prediction', err)
+    alert('Failed to fetch prediction')
   }
 }
 
