@@ -17,7 +17,12 @@
             <td
               v-for="day in week"
               :key="day.date || wi + '-' + day.text"
-              :class="{ today: day.isToday, period: day.isPeriod, clickable: day.date }"
+              :class="{
+                today: day.isToday,
+                period: day.isPeriod,
+                'period-start': day.isStart,
+                clickable: day.date
+              }"
               @click="openMenu(day.date, $event)"
               @contextmenu.prevent="openMenu(day.date, $event)"
               :tabindex="day.date ? 0 : -1"
@@ -56,7 +61,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const current = ref(new Date())
 const periods = ref([]) // {start_date, end_date}
-const events = ref([]) // individual dates to mark
+const events = ref({}) // date -> 'start' | 'period'
 const menu = ref({ visible: false, x: 0, y: 0, date: null })
 
 const monthYear = computed(() =>
@@ -64,16 +69,21 @@ const monthYear = computed(() =>
 )
 
 function computeEvents() {
-  const dates = []
+  const map = {}
   for (const p of periods.value) {
-    if (!p.end_date) continue
     const start = new Date(p.start_date)
+    const startStr = start.toISOString().split('T')[0]
+    if (!p.end_date) {
+      map[startStr] = 'start'
+      continue
+    }
     const end = new Date(p.end_date)
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      dates.push(new Date(d).toISOString().split('T')[0])
+      const dateStr = new Date(d).toISOString().split('T')[0]
+      map[dateStr] = d.getTime() === start.getTime() ? 'start' : 'period'
     }
   }
-  events.value = dates
+  events.value = map
 }
 
 function buildWeeks() {
@@ -83,15 +93,17 @@ function buildWeeks() {
   let week = []
 
   for (let i = 0; i < start.getDay(); i++) {
-    week.push({ text: '', date: null, isToday: false, isPeriod: false })
+    week.push({ text: '', date: null, isToday: false, isPeriod: false, isStart: false })
   }
 
   for (let day = 1; day <= end.getDate(); day++) {
     const date = new Date(current.value.getFullYear(), current.value.getMonth(), day)
     const dateStr = date.toISOString().split('T')[0]
-    const isPeriod = events.value.includes(dateStr)
+    const type = events.value[dateStr]
+    const isStart = type === 'start'
+    const isPeriod = type === 'start' || type === 'period'
     const isToday = dateStr === new Date().toISOString().split('T')[0]
-    week.push({ text: day, date: dateStr, isToday, isPeriod })
+    week.push({ text: day, date: dateStr, isToday, isPeriod, isStart })
     if (week.length === 7) {
       weeks.push(week)
       week = []
@@ -99,7 +111,8 @@ function buildWeeks() {
   }
 
   if (week.length) {
-    while (week.length < 7) week.push({ text: '', date: null, isToday: false, isPeriod: false })
+    while (week.length < 7)
+      week.push({ text: '', date: null, isToday: false, isPeriod: false, isStart: false })
     weeks.push(week)
   }
 
@@ -267,6 +280,10 @@ onBeforeUnmount(() => {
 
 .calendar-grid td.period {
   background: #ffb3ba;
+}
+
+.calendar-grid td.period-start {
+  background: #ff8080;
 }
 
 .calendar-grid td.clickable {
