@@ -31,6 +31,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/daygrid'
+import '@fullcalendar/core/index.css'
+import '@fullcalendar/daygrid/index.css'
 
 const events = ref([])
 const calendarPlugins = [dayGridPlugin]
