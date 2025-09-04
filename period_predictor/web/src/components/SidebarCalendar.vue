@@ -19,8 +19,11 @@
               :key="day.date || wi + '-' + day.text"
               :class="{
                 today: day.isToday,
-                period: day.isPeriod,
-                'period-start': day.isStart,
+                period: day.isPeriod && !day.isPrediction,
+                'period-start': day.isStart && !day.isPrediction,
+                prediction: day.isPrediction,
+                'prediction-start': day.isPrediction && day.isStart,
+                pms: day.isPms,
                 clickable: day.date
               }"
               @click="openMenu(day.date, $event)"
@@ -45,6 +48,9 @@
         Predict next period
       </button>
     </div>
+    <div v-if="prediction" class="prediction-summary">
+      Next: {{ prediction.next_start }} ({{ prediction.period_length }} days)
+    </div>
     <ul
       v-if="menu.visible"
       class="context-menu"
@@ -64,7 +70,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const current = ref(new Date())
 const periods = ref([]) // {start_date, end_date}
-const events = ref({}) // date -> 'start' | 'period'
+const events = ref({}) // date -> type
+const prediction = ref(null)
 const menu = ref({ visible: false, x: 0, y: 0, date: null })
 
 const monthYear = computed(() =>
@@ -86,6 +93,21 @@ function computeEvents() {
       map[dateStr] = d.getTime() === start.getTime() ? 'start' : 'period'
     }
   }
+  if (prediction.value) {
+    const start = new Date(prediction.value.next_start)
+    for (let i = 0; i < prediction.value.period_length; i++) {
+      const d = new Date(start)
+      d.setDate(start.getDate() + i)
+      const dateStr = d.toISOString().split('T')[0]
+      if (!map[dateStr]) map[dateStr] = i === 0 ? 'prediction-start' : 'prediction'
+    }
+    const pmsStart = new Date(prediction.value.pms_start)
+    const pmsEnd = new Date(prediction.value.pms_end)
+    for (let d = new Date(pmsStart); d <= pmsEnd; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0]
+      if (!map[dateStr]) map[dateStr] = 'pms'
+    }
+  }
   events.value = map
 }
 
@@ -96,17 +118,23 @@ function buildWeeks() {
   let week = []
 
   for (let i = 0; i < start.getDay(); i++) {
-    week.push({ text: '', date: null, isToday: false, isPeriod: false, isStart: false })
+    week.push({ text: '', date: null, isToday: false, isPeriod: false, isStart: false, isPms: false, isPrediction: false })
   }
 
   for (let day = 1; day <= end.getDate(); day++) {
     const date = new Date(current.value.getFullYear(), current.value.getMonth(), day)
     const dateStr = date.toISOString().split('T')[0]
     const type = events.value[dateStr]
-    const isStart = type === 'start'
-    const isPeriod = type === 'start' || type === 'period'
+    const isStart = type === 'start' || type === 'prediction-start'
+    const isPrediction = type === 'prediction' || type === 'prediction-start'
+    const isPeriod =
+      type === 'start' ||
+      type === 'period' ||
+      type === 'prediction' ||
+      type === 'prediction-start'
+    const isPms = type === 'pms'
     const isToday = dateStr === new Date().toISOString().split('T')[0]
-    week.push({ text: day, date: dateStr, isToday, isPeriod, isStart })
+    week.push({ text: day, date: dateStr, isToday, isPeriod, isStart, isPms, isPrediction })
     if (week.length === 7) {
       weeks.push(week)
       week = []
@@ -115,7 +143,7 @@ function buildWeeks() {
 
   if (week.length) {
     while (week.length < 7)
-      week.push({ text: '', date: null, isToday: false, isPeriod: false, isStart: false })
+      week.push({ text: '', date: null, isToday: false, isPeriod: false, isStart: false, isPms: false, isPrediction: false })
     weeks.push(week)
   }
 
@@ -226,6 +254,9 @@ async function clearAll() {
     const res = await fetch('api/periods', { method: 'DELETE' })
     if (!res.ok) throw new Error('Request failed')
     await refreshPeriods()
+    prediction.value = null
+    computeEvents()
+    weeks.value = buildWeeks()
   } catch (err) {
     console.error('Failed to clear records', err)
     alert('Failed to clear records')
@@ -249,8 +280,13 @@ async function predictNext() {
     const res = await fetch('api/prediction')
     if (!res.ok) throw new Error('Request failed')
     const data = await res.json()
-    if (data.next) {
-      alert(`Next period expected on ${data.next}`)
+    prediction.value = data
+    computeEvents()
+    weeks.value = buildWeeks()
+    if (data.next_start) {
+      alert(
+        `Next period expected on ${data.next_start} lasting ${data.period_length} days`
+      )
     } else {
       alert('Not enough data for prediction')
     }
@@ -303,6 +339,18 @@ onBeforeUnmount(() => {
 
 .calendar-grid td.period-start {
   background: #ff8080;
+}
+
+.calendar-grid td.prediction {
+  background: #ffd9cc;
+}
+
+.calendar-grid td.prediction-start {
+  background: #ffb3a7;
+}
+
+.calendar-grid td.pms {
+  background: #cce5ff;
 }
 
 .calendar-grid td.clickable {
