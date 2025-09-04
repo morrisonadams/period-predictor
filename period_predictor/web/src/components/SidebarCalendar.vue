@@ -50,14 +50,17 @@ async function startPeriod() {
     })
     if (!res.ok) throw new Error('Request failed')
     events.value = [...events.value, { title: 'Period', start: today }]
+    console.log('Logged period for', today)
     alert('Period logged!')
   } catch (err) {
+    console.error('Failed to log period', err)
     alert('Failed to log period')
   }
 }
 
 async function endPeriod() {
   // Endpoint not yet implemented
+  console.warn('End period action is not implemented')
 }
 
 function handleKey(e) {
@@ -71,9 +74,15 @@ function handleKey(e) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKey)
-  const res = await fetch('api/periods')
-  const dates = await res.json()
-  events.value = dates.map((d) => ({ title: 'Period', start: d }))
+  try {
+    const res = await fetch('api/periods')
+    if (!res.ok) throw new Error('Request failed')
+    const dates = await res.json()
+    events.value = dates.map((d) => ({ title: 'Period', start: d }))
+    console.log('Loaded periods', events.value)
+  } catch (err) {
+    console.error('Failed to load periods', err)
+  }
 })
 
 onBeforeUnmount(() => {
