@@ -46,42 +46,121 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   }
 });
 db.serialize(() => {
-  db.run('CREATE TABLE IF NOT EXISTS periods (start_date TEXT)', (err) => {
-    if (err) {
-      logger.error('Failed to create periods table:', err);
-    } else {
-      logger.debug('Ensured periods table exists');
+  db.run(
+    'CREATE TABLE IF NOT EXISTS periods (start_date TEXT PRIMARY KEY, end_date TEXT)',
+    (err) => {
+      if (err) {
+        logger.error('Failed to create periods table:', err);
+      } else {
+        logger.debug('Ensured periods table exists');
+      }
     }
+  );
+});
+
+// Fetch all period records
+app.get('/api/periods', (_req, res) => {
+  db.all('SELECT start_date, end_date FROM periods ORDER BY start_date', (err, rows) => {
+    if (err) {
+      logger.error('Failed to fetch periods:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    logger.debug(`Returning ${rows.length} periods`);
+    res.json(rows);
   });
 });
 
-// List all period start dates or add a new one
-app.route('/api/periods')
-  .get((req, res) => {
-    db.all('SELECT start_date FROM periods ORDER BY start_date', (err, rows) => {
-      if (err) {
-        logger.error('Failed to fetch periods:', err);
-        return res.status(500).json({ error: err.message });
-      }
-      logger.debug(`Returning ${rows.length} periods`);
-      res.json(rows.map(r => r.start_date));
-    });
-  })
-  .post((req, res) => {
-    const date = req.body?.date;
-    if (!date) {
-      logger.error('POST /api/periods missing required "date" field');
-      return res.status(400).json({ error: 'date is required' });
+// Add a period start
+app.post('/api/periods/start', (req, res) => {
+  const date = req.body?.date;
+  if (!date) {
+    logger.error('POST /api/periods/start missing required "date" field');
+    return res.status(400).json({ error: 'date is required' });
+  }
+  db.run('INSERT OR IGNORE INTO periods (start_date) VALUES (?)', [date], function (err) {
+    if (err) {
+      logger.error('Failed to insert period start:', err);
+      return res.status(500).json({ error: err.message });
     }
-    db.run('INSERT INTO periods (start_date) VALUES (?)', [date], function (err) {
-      if (err) {
-        logger.error('Failed to insert period:', err);
-        return res.status(500).json({ error: err.message });
-      }
-      logger.info(`Recorded period start date ${date}`);
-      res.status(201).json({});
-    });
+    logger.info(`Recorded period start date ${date}`);
+    res.status(201).json({});
   });
+});
+
+// Remove a period start (and associated end if present)
+app.delete('/api/periods/start/:date', (req, res) => {
+  const { date } = req.params;
+  db.run('DELETE FROM periods WHERE start_date = ?', [date], function (err) {
+    if (err) {
+      logger.error('Failed to delete period start:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    logger.info(`Removed period start date ${date}`);
+    res.json({});
+  });
+});
+
+// Add a period end. Finds the most recent start within 7 days.
+app.post('/api/periods/end', (req, res) => {
+  const endDate = req.body?.date;
+  if (!endDate) {
+    logger.error('POST /api/periods/end missing required "date" field');
+    return res.status(400).json({ error: 'date is required' });
+  }
+  db.all('SELECT start_date FROM periods WHERE end_date IS NULL', (err, rows) => {
+    if (err) {
+      logger.error('Failed to find open periods:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    const end = new Date(endDate);
+    const match = rows.find(r => {
+      const start = new Date(r.start_date);
+      const diff = (end - start) / (1000 * 60 * 60 * 24);
+      return diff >= 0 && diff <= 7;
+    });
+    if (!match) {
+      logger.info(`No start date within 7 days for end date ${endDate}`);
+      return res.status(404).json({ error: 'no start date within 7 days' });
+    }
+    db.run(
+      'UPDATE periods SET end_date = ? WHERE start_date = ?',
+      [endDate, match.start_date],
+      function (updateErr) {
+        if (updateErr) {
+          logger.error('Failed to add period end:', updateErr);
+          return res.status(500).json({ error: updateErr.message });
+        }
+        logger.info(`Recorded period end date ${endDate} for start ${match.start_date}`);
+        res.status(201).json({});
+      }
+    );
+  });
+});
+
+// Remove a period end
+app.delete('/api/periods/end/:date', (req, res) => {
+  const { date } = req.params;
+  db.run('UPDATE periods SET end_date = NULL WHERE end_date = ?', [date], function (err) {
+    if (err) {
+      logger.error('Failed to remove period end:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    logger.info(`Removed period end date ${date}`);
+    res.json({});
+  });
+});
+
+// Delete all period records
+app.delete('/api/periods', (_req, res) => {
+  db.run('DELETE FROM periods', (err) => {
+    if (err) {
+      logger.error('Failed to clear periods table:', err);
+      return res.status(500).json({ error: err.message });
+    }
+    logger.warn('All period records deleted');
+    res.json({});
+  });
+});
 
 // Predict the next period start date
 app.get('/api/prediction', (req, res) => {
