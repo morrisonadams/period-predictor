@@ -18,4 +18,12 @@ LOG_LEVEL="$(bashio::config 'log_level' 'info')"
 export LOG_LEVEL
 bashio::log.info "Using log level ${LOG_LEVEL}"
 
+OPENAI_API_KEY="$(bashio::config 'openai_api_key' '')"
+if bashio::var.has_value "${OPENAI_API_KEY}"; then
+    export OPENAI_API_KEY
+    bashio::log.info "OpenAI API key loaded from configuration"
+else
+    bashio::log.info "No OpenAI API key provided"
+fi
+
 exec npm --prefix /app/backend start
