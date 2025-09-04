@@ -1,11 +1,12 @@
 <template>
   <aside class="sidebar" tabindex="0">
-    <FullCalendar
-      initialView="dayGridMonth"
-      :plugins="calendarPlugins"
-      :events="events"
-      aria-label="Period calendar"
-    />
+    <div class="calendar" aria-label="Period calendar">
+      <FullCalendar
+        initialView="dayGridMonth"
+        :plugins="calendarPlugins"
+        :events="events"
+      />
+    </div>
     <div class="controls">
       <button
         @click="startPeriod"
