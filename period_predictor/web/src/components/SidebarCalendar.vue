@@ -1,11 +1,13 @@
 <template>
   <aside class="sidebar" tabindex="0">
-    <FullCalendar
-      initialView="dayGridMonth"
-      :plugins="calendarPlugins"
-      :events="events"
-      aria-label="Period calendar"
-    />
+    <div class="calendar" aria-label="Period calendar">
+      <FullCalendar
+        initialView="dayGridMonth"
+        :plugins="calendarPlugins"
+        :events="events"
+        :headerToolbar="toolbarOptions"
+      />
+    </div>
     <div class="controls">
       <button
         @click="startPeriod"
@@ -32,6 +34,11 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 
 const events = ref([])
 const calendarPlugins = [dayGridPlugin]
+const toolbarOptions = {
+  left: 'prev,next',
+  center: 'title',
+  right: ''
+}
 
 async function startPeriod() {
   const today = new Date().toISOString().split('T')[0]
