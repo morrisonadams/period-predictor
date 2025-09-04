@@ -17,7 +17,11 @@
             <td
               v-for="day in week"
               :key="day.date || wi + '-' + day.text"
-              :class="{ today: day.isToday, period: day.isPeriod }"
+              :class="{ today: day.isToday, period: day.isPeriod, clickable: day.date && !day.isPeriod }"
+              @click="logPeriod(day.date)"
+              @keydown.enter="logPeriod(day.date)"
+              :tabindex="day.date && !day.isPeriod ? 0 : -1"
+              :role="day.date && !day.isPeriod ? 'button' : null"
             >
               {{ day.text }}
             </td>
@@ -98,23 +102,28 @@ function nextMonth() {
   weeks.value = buildWeeks()
 }
 
-async function startPeriod() {
-  const today = new Date().toISOString().split('T')[0]
+async function logPeriod(date) {
+  if (!date || events.value.includes(date)) return
   try {
     const res = await fetch('api/periods', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: today })
+      body: JSON.stringify({ date })
     })
     if (!res.ok) throw new Error('Request failed')
-    events.value.push(today)
+    events.value.push(date)
     weeks.value = buildWeeks()
-    console.log('Logged period for', today)
+    console.log('Logged period for', date)
     alert('Period logged!')
   } catch (err) {
     console.error('Failed to log period', err)
     alert('Failed to log period')
   }
+}
+
+async function startPeriod() {
+  const today = new Date().toISOString().split('T')[0]
+  await logPeriod(today)
 }
 
 async function endPeriod() {
@@ -177,6 +186,10 @@ onBeforeUnmount(() => {
 
 .calendar-grid td.period {
   background: #ffb3ba;
+}
+
+.calendar-grid td.clickable {
+  cursor: pointer;
 }
 </style>
 
