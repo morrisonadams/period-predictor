@@ -179,26 +179,45 @@ app.delete('/api/periods', (_req, res) => {
 });
 
 // Predict the next period start date
-app.get('/api/prediction', (req, res) => {
+app.get('/api/prediction', (_req, res) => {
   db.all('SELECT start_date FROM periods ORDER BY start_date', (err, rows) => {
     if (err) {
       logger.error('Failed to generate prediction:', err);
       return res.status(500).json({ error: err.message });
     }
-    if (rows.length < 2) {
-      logger.info('Not enough data to generate prediction');
-      return res.json({ next: null });
+
+    let cycleLength = 28; // default cycle length
+    let nextDate;
+
+    if (rows.length >= 2) {
+      const dates = rows.map(r => new Date(r.start_date));
+      const intervals = [];
+      for (let i = 1; i < dates.length; i++) {
+        const diffMs = dates[i] - dates[i - 1];
+        intervals.push(diffMs / (1000 * 60 * 60 * 24));
+      }
+      cycleLength = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      nextDate = new Date(dates[dates.length - 1].getTime() + cycleLength * 24 * 60 * 60 * 1000);
+      logger.info(`Predicted next period start ${nextDate.toISOString().split('T')[0]} based on history`);
+    } else if (rows.length === 1) {
+      const lastStart = new Date(rows[0].start_date);
+      nextDate = new Date(lastStart.getTime() + cycleLength * 24 * 60 * 60 * 1000);
+      logger.info('Only one period record; using default 28 day cycle');
+    } else {
+      nextDate = new Date();
+      nextDate.setDate(nextDate.getDate() + cycleLength);
+      logger.info('No period data; using today + 28 days for prediction');
     }
-    const dates = rows.map(r => new Date(r.start_date));
-    const intervals = [];
-    for (let i = 1; i < dates.length; i++) {
-      const diffMs = dates[i] - dates[i - 1];
-      intervals.push(diffMs / (1000 * 60 * 60 * 24));
-    }
-    const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-    const nextDate = new Date(dates[dates.length - 1].getTime() + avg * 24 * 60 * 60 * 1000);
-    logger.info(`Predicted next period start ${nextDate.toISOString().split('T')[0]}`);
-    res.json({ next: nextDate.toISOString().split('T')[0] });
+
+    const pmsStart = new Date(nextDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const pmsEnd = new Date(nextDate.getTime() - 5 * 24 * 60 * 60 * 1000);
+
+    res.json({
+      next_start: nextDate.toISOString().split('T')[0],
+      period_length: 5,
+      pms_start: pmsStart.toISOString().split('T')[0],
+      pms_end: pmsEnd.toISOString().split('T')[0],
+    });
   });
 });
 
