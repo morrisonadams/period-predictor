@@ -76,7 +76,8 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const current = ref(new Date())
 const users = ref([])
-const selectedUser = ref('')
+// Use a default user so the app works even if fetching real users fails
+const selectedUser = ref('default')
 const periods = ref([]) // {start_date, end_date}
 const events = ref({}) // date -> type
 const prediction = ref(null)
@@ -193,12 +194,22 @@ async function fetchUsers() {
     const res = await fetch('api/users')
     if (!res.ok) throw new Error('Request failed')
     users.value = await res.json()
-    if (users.value.length && !selectedUser.value) {
-      selectedUser.value = users.value[0].id
+    if (users.value.length) {
+      // Select the first user only if we are still using the default placeholder
+      if (!selectedUser.value || selectedUser.value === 'default') {
+        selectedUser.value = users.value[0].id
+      }
+    } else {
+      // Fall back to a fixed user identifier when none are provided
+      selectedUser.value = 'default'
     }
   } catch (err) {
     console.error('Failed to load users', err)
+    // When fetching users fails, ensure we still have a usable user id
+    selectedUser.value = 'default'
   }
+  // Always load periods for whichever user we ended up with
+  await refreshPeriods()
 }
 
 async function refreshPeriods() {
