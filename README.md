@@ -15,6 +15,19 @@ In your add-on configuration you can set:
 - `log_level`: Controls log verbosity.
 - `openai_api_key`: Your OpenAI API key used for generating predictions.
 
+## Events
+
+The add-on emits Home Assistant events that can be used in automations or
+flows (e.g. Node-RED):
+
+- `period_predictor_pms_start` – fired on the predicted PMS start date.
+- `period_predictor_period_start_predicted` – fired on the predicted period
+  start date.
+- `period_predictor_period_start` – fired when a period start is recorded via
+  the API.
+
+Each event includes the `user` and `date` in its data payload.
+
 ## Add this repository to Home Assistant
 
 1. Go to **Settings → Add-ons → Add-on Store**.
