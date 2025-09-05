@@ -5,6 +5,11 @@ const sqlite3 = require('sqlite3').verbose();
 const logger = require('./logger');
 const { OpenAI } = require('openai');
 
+// Home Assistant supervisor API details
+const SUPERVISOR_TOKEN =
+  process.env.SUPERVISOR_TOKEN || process.env.HASSIO_TOKEN || '';
+const HA_API = 'http://supervisor/homeassistant/api';
+
 const app = express();
 const PORT = process.env.PORT || 3002;
 
@@ -48,7 +53,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 });
 db.serialize(() => {
   db.run(
-    'CREATE TABLE IF NOT EXISTS periods (start_date TEXT PRIMARY KEY, end_date TEXT)',
+    'CREATE TABLE IF NOT EXISTS periods (user TEXT, start_date TEXT, end_date TEXT, PRIMARY KEY(user, start_date))',
     (err) => {
       if (err) {
         logger.error('Failed to create periods table:', err);
@@ -60,6 +65,18 @@ db.serialize(() => {
   db.all('PRAGMA table_info(periods)', (err, columns) => {
     if (err) {
       logger.error('Failed to fetch periods table info:', err);
+      return;
+    }
+    const hasUser = columns.some((c) => c.name === 'user');
+    if (!hasUser) {
+      db.run('ALTER TABLE periods RENAME TO periods_old');
+      db.run(
+        'CREATE TABLE periods (user TEXT, start_date TEXT, end_date TEXT, PRIMARY KEY(user, start_date))'
+      );
+      db.run(
+        'INSERT INTO periods (user, start_date, end_date) SELECT "default", start_date, end_date FROM periods_old'
+      );
+      db.run('DROP TABLE periods_old');
       return;
     }
     const hasEndDate = columns.some((c) => c.name === 'end_date');
@@ -75,117 +92,186 @@ db.serialize(() => {
   });
 });
 
-// Fetch all period records
-app.get('/api/periods', (_req, res) => {
-  db.all('SELECT start_date, end_date FROM periods ORDER BY start_date', (err, rows) => {
-    if (err) {
-      logger.error('Failed to fetch periods:', err);
-      return res.status(500).json({ error: err.message });
+// Proxy Home Assistant users
+app.get('/api/users', async (_req, res) => {
+  if (!SUPERVISOR_TOKEN) {
+    return res.status(500).json({ error: 'supervisor token not set' });
+  }
+  try {
+    const response = await fetch(`${HA_API}/users`, {
+      headers: { Authorization: `Bearer ${SUPERVISOR_TOKEN}` },
+    });
+    if (!response.ok) {
+      throw new Error(`status ${response.status}`);
     }
-    logger.debug(`Returning ${rows.length} periods`);
-    res.json(rows);
-  });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    logger.error('Failed to fetch users from Home Assistant:', err);
+    res.status(500).json({ error: 'failed to fetch users' });
+  }
+});
+
+// Fetch all period records
+app.get('/api/periods', (req, res) => {
+  const user = req.query.user;
+  if (!user) {
+    return res.status(400).json({ error: 'user is required' });
+  }
+  db.all(
+    'SELECT start_date, end_date FROM periods WHERE user = ? ORDER BY start_date',
+    [user],
+    (err, rows) => {
+      if (err) {
+        logger.error('Failed to fetch periods:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      logger.debug(`Returning ${rows.length} periods for ${user}`);
+      res.json(rows);
+    }
+  );
 });
 
 // Add a period start
 app.post('/api/periods/start', (req, res) => {
-  const date = req.body?.date;
-  if (!date) {
-    logger.error('POST /api/periods/start missing required "date" field');
-    return res.status(400).json({ error: 'date is required' });
+  const { date, user } = req.body || {};
+  if (!date || !user) {
+    logger.error('POST /api/periods/start missing required fields');
+    return res.status(400).json({ error: 'date and user are required' });
   }
-  db.run('INSERT OR IGNORE INTO periods (start_date) VALUES (?)', [date], function (err) {
-    if (err) {
-      logger.error('Failed to insert period start:', err);
-      return res.status(500).json({ error: err.message });
+  db.run(
+    'INSERT OR IGNORE INTO periods (user, start_date) VALUES (?, ?)',
+    [user, date],
+    function (err) {
+      if (err) {
+        logger.error('Failed to insert period start:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      logger.info(`Recorded period start date ${date} for ${user}`);
+      res.status(201).json({});
     }
-    logger.info(`Recorded period start date ${date}`);
-    res.status(201).json({});
-  });
+  );
 });
 
 // Remove a period start (and associated end if present)
 app.delete('/api/periods/start/:date', (req, res) => {
   const { date } = req.params;
-  db.run('DELETE FROM periods WHERE start_date = ?', [date], function (err) {
-    if (err) {
-      logger.error('Failed to delete period start:', err);
-      return res.status(500).json({ error: err.message });
+  const user = req.query.user;
+  if (!user) {
+    return res.status(400).json({ error: 'user is required' });
+  }
+  db.run(
+    'DELETE FROM periods WHERE start_date = ? AND user = ?',
+    [date, user],
+    function (err) {
+      if (err) {
+        logger.error('Failed to delete period start:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      logger.info(`Removed period start date ${date} for ${user}`);
+      res.json({});
     }
-    logger.info(`Removed period start date ${date}`);
-    res.json({});
-  });
+  );
 });
 
 // Add a period end. Finds the most recent start within 7 days.
 app.post('/api/periods/end', (req, res) => {
   const endDate = req.body?.date;
-  if (!endDate) {
-    logger.error('POST /api/periods/end missing required "date" field');
-    return res.status(400).json({ error: 'date is required' });
+  const user = req.body?.user;
+  if (!endDate || !user) {
+    logger.error('POST /api/periods/end missing required fields');
+    return res.status(400).json({ error: 'date and user are required' });
   }
-  db.all('SELECT start_date FROM periods WHERE end_date IS NULL', (err, rows) => {
-    if (err) {
-      logger.error('Failed to find open periods:', err);
-      return res.status(500).json({ error: err.message });
-    }
-    const end = new Date(endDate);
-    const match = rows.find(r => {
-      const start = new Date(r.start_date);
-      const diff = (end - start) / (1000 * 60 * 60 * 24);
-      return diff >= 0 && diff <= 7;
-    });
-    if (!match) {
-      logger.info(`No start date within 7 days for end date ${endDate}`);
-      return res.status(404).json({ error: 'no start date within 7 days' });
-    }
-    db.run(
-      'UPDATE periods SET end_date = ? WHERE start_date = ?',
-      [endDate, match.start_date],
-      function (updateErr) {
-        if (updateErr) {
-          logger.error('Failed to add period end:', updateErr);
-          return res.status(500).json({ error: updateErr.message });
-        }
-        logger.info(`Recorded period end date ${endDate} for start ${match.start_date}`);
-        res.status(201).json({});
+  db.all(
+    'SELECT start_date FROM periods WHERE user = ? AND end_date IS NULL',
+    [user],
+    (err, rows) => {
+      if (err) {
+        logger.error('Failed to find open periods:', err);
+        return res.status(500).json({ error: err.message });
       }
-    );
-  });
+      const end = new Date(endDate);
+      const match = rows.find((r) => {
+        const start = new Date(r.start_date);
+        const diff = (end - start) / (1000 * 60 * 60 * 24);
+        return diff >= 0 && diff <= 7;
+      });
+      if (!match) {
+        logger.info(`No start date within 7 days for end date ${endDate}`);
+        return res.status(404).json({ error: 'no start date within 7 days' });
+      }
+      db.run(
+        'UPDATE periods SET end_date = ? WHERE user = ? AND start_date = ?',
+        [endDate, user, match.start_date],
+        function (updateErr) {
+          if (updateErr) {
+            logger.error('Failed to add period end:', updateErr);
+            return res.status(500).json({ error: updateErr.message });
+          }
+          logger.info(
+            `Recorded period end date ${endDate} for start ${match.start_date} and user ${user}`
+          );
+          res.status(201).json({});
+        }
+      );
+    }
+  );
 });
 
 // Remove a period end
 app.delete('/api/periods/end/:date', (req, res) => {
   const { date } = req.params;
-  db.run('UPDATE periods SET end_date = NULL WHERE end_date = ?', [date], function (err) {
-    if (err) {
-      logger.error('Failed to remove period end:', err);
-      return res.status(500).json({ error: err.message });
+  const user = req.query.user;
+  if (!user) {
+    return res.status(400).json({ error: 'user is required' });
+  }
+  db.run(
+    'UPDATE periods SET end_date = NULL WHERE end_date = ? AND user = ?',
+    [date, user],
+    function (err) {
+      if (err) {
+        logger.error('Failed to remove period end:', err);
+        return res.status(500).json({ error: err.message });
+      }
+      logger.info(`Removed period end date ${date} for ${user}`);
+      res.json({});
     }
-    logger.info(`Removed period end date ${date}`);
-    res.json({});
-  });
+  );
 });
 
 // Delete all period records
-app.delete('/api/periods', (_req, res) => {
-  db.run('DELETE FROM periods', (err) => {
+app.delete('/api/periods', (req, res) => {
+  const user = req.query.user;
+  const sql = user ? 'DELETE FROM periods WHERE user = ?' : 'DELETE FROM periods';
+  const params = user ? [user] : [];
+  db.run(sql, params, (err) => {
     if (err) {
       logger.error('Failed to clear periods table:', err);
       return res.status(500).json({ error: err.message });
     }
-    logger.warn('All period records deleted');
+    if (user) {
+      logger.warn(`All period records deleted for ${user}`);
+    } else {
+      logger.warn('All period records deleted');
+    }
     res.json({});
   });
 });
 
 // Predict the next period start date using GPT with a fallback heuristic
-app.get('/api/prediction', (_req, res) => {
-  db.all('SELECT start_date FROM periods ORDER BY start_date', async (err, rows) => {
-    if (err) {
-      logger.error('Failed to generate prediction:', err);
-      return res.status(500).json({ error: err.message });
-    }
+app.get('/api/prediction', (req, res) => {
+  const user = req.query.user;
+  if (!user) {
+    return res.status(400).json({ error: 'user is required' });
+  }
+  db.all(
+    'SELECT start_date FROM periods WHERE user = ? ORDER BY start_date',
+    [user],
+    async (err, rows) => {
+      if (err) {
+        logger.error('Failed to generate prediction:', err);
+        return res.status(500).json({ error: err.message });
+      }
 
     let nextDate;
     let message = '';

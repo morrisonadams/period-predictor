@@ -1,5 +1,11 @@
 <template>
   <aside class="sidebar" tabindex="0">
+    <div class="user-select" v-if="users.length">
+      <label for="userSelect">User:</label>
+      <select id="userSelect" v-model="selectedUser">
+        <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
+      </select>
+    </div>
     <div class="calendar" aria-label="Period calendar">
       <div class="calendar-header">
         <button @click="prevMonth" aria-label="Previous month">&#x2039;</button>
@@ -65,10 +71,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const current = ref(new Date())
+const users = ref([])
+const selectedUser = ref('')
 const periods = ref([]) // {start_date, end_date}
 const events = ref({}) // date -> type
 const prediction = ref(null)
@@ -180,9 +188,23 @@ function closeMenu() {
   menu.value.visible = false
 }
 
-async function refreshPeriods() {
+async function fetchUsers() {
   try {
-    const res = await fetch('api/periods')
+    const res = await fetch('api/users')
+    if (!res.ok) throw new Error('Request failed')
+    users.value = await res.json()
+    if (users.value.length && !selectedUser.value) {
+      selectedUser.value = users.value[0].id
+    }
+  } catch (err) {
+    console.error('Failed to load users', err)
+  }
+}
+
+async function refreshPeriods() {
+  if (!selectedUser.value) return
+  try {
+    const res = await fetch(`api/periods?user=${selectedUser.value}`)
     if (!res.ok) throw new Error('Request failed')
     periods.value = await res.json()
     computeEvents()
@@ -198,7 +220,7 @@ async function addStart(date) {
     const res = await fetch('api/periods/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date })
+      body: JSON.stringify({ date, user: selectedUser.value })
     })
     if (!res.ok) throw new Error('Request failed')
     await refreshPeriods()
@@ -211,7 +233,7 @@ async function addStart(date) {
 async function removeStart(date) {
   closeMenu()
   try {
-    const res = await fetch(`api/periods/start/${date}`, { method: 'DELETE' })
+    const res = await fetch(`api/periods/start/${date}?user=${selectedUser.value}`, { method: 'DELETE' })
     if (!res.ok) throw new Error('Request failed')
     await refreshPeriods()
   } catch (err) {
@@ -226,7 +248,7 @@ async function addEnd(date) {
     const res = await fetch('api/periods/end', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date })
+      body: JSON.stringify({ date, user: selectedUser.value })
     })
     if (!res.ok) throw new Error('Request failed')
     await refreshPeriods()
@@ -239,7 +261,7 @@ async function addEnd(date) {
 async function removeEnd(date) {
   closeMenu()
   try {
-    const res = await fetch(`api/periods/end/${date}`, { method: 'DELETE' })
+    const res = await fetch(`api/periods/end/${date}?user=${selectedUser.value}`, { method: 'DELETE' })
     if (!res.ok) throw new Error('Request failed')
     await refreshPeriods()
   } catch (err) {
@@ -251,7 +273,7 @@ async function removeEnd(date) {
 async function clearAll() {
   if (!confirm('Delete all records?')) return
   try {
-    const res = await fetch('api/periods', { method: 'DELETE' })
+    const res = await fetch(`api/periods?user=${selectedUser.value}`, { method: 'DELETE' })
     if (!res.ok) throw new Error('Request failed')
     await refreshPeriods()
     prediction.value = null
@@ -265,7 +287,7 @@ async function clearAll() {
 
 async function testDb() {
   try {
-    const res = await fetch('api/periods')
+    const res = await fetch(`api/periods?user=${selectedUser.value}`)
     if (!res.ok) throw new Error('Request failed')
     const data = await res.json()
     alert(JSON.stringify(data))
@@ -277,7 +299,7 @@ async function testDb() {
 
 async function predictNext() {
   try {
-    const res = await fetch('api/prediction')
+    const res = await fetch(`api/prediction?user=${selectedUser.value}`)
     if (!res.ok) throw new Error('Request failed')
     const data = await res.json()
     prediction.value = data
@@ -298,6 +320,11 @@ async function predictNext() {
 
 onMounted(() => {
   window.addEventListener('click', closeMenu)
+  fetchUsers()
+})
+
+watch(selectedUser, () => {
+  prediction.value = null
   refreshPeriods()
 })
 
@@ -308,6 +335,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @import '../styles/sidebar.css';
+
+.user-select {
+  margin-bottom: 0.5rem;
+}
 
 .calendar-header {
   display: flex;
